@@ -40,6 +40,7 @@ class SPDXBuilder:
 
         agent.creationInfo = creationInfo
 
+        # TODO: nedes to be an URI
         self.baseId = f'SPDXRef-{self.uuid}'
 
         document = spdx.SpdxDocument()
@@ -87,21 +88,23 @@ class SrcDirInput:
     def sanitize_path(self, path):
         for prefix in self.prefixes_to_strip:
             if path.startswith(prefix):
-                return path[len(prefix):]
+                return f".{path[len(prefix):]}"
         return path
 
     def mk_and_add_spdx_file(self, raw_file_path):
         file_path = self.sanitize_path(raw_file_path)
         file = spdx.software_File()
-        # TODO: sanitize path
         file.name = file_path
-        # TODO: compute checksum
+        local_file_path = self.src_dir / file_path
+        if local_file_path.exists():
+            sha256 = subprocess.check_output(['sha256sum', self.src_dir / file_path]).split()[0].decode('utf-8')
+            hash = spdx.Hash()
+            hash.algorithm = spdx.HashAlgorithm.sha256
+            hash.hashValue = sha256
+            file.verifiedUsing = [hash]
+        else:
+            logging.warning(f'WARNING: File not found: {local_file_path}')
         return self.spdx_builder.add_object(file, 'FILE-' + file_path.replace('/', '-'))
-
-    # def __iter__(self):
-    #     for root, dirs, files in os.walk(self.src_dir):
-    #         for file in files:
-    #             yield os.path.join(root, file)
 
 def main():
     parser = argparse.ArgumentParser(
@@ -120,7 +123,8 @@ def main():
     spdx_builder = SPDXBuilder(args.verbose)
 
     src_dir_input = SrcDirInput(spdx_builder, src_dir, args.src_strip_prefix)
-    src_dir_input.mk_and_add_spdx_file("test.c")
+    src_dir_input.mk_and_add_spdx_file("src/hello.c")
+    src_dir_input.mk_and_add_spdx_file("src/hello.o")
 
     if args.artifact:
         artifact_file = src_dir_input.mk_and_add_spdx_file(args.artifact)
