@@ -4,6 +4,7 @@ import sys
 import csv
 import json
 import logging
+import hashlib
 import uuid
 from datetime import datetime, timezone
 import subprocess
@@ -13,8 +14,6 @@ import argparse
 from pathlib import Path
 
 from . import spdx3_0 as spdx
-
-
 
 class SPDXBuilder:
     def __init__(self, verbose):
@@ -97,7 +96,7 @@ class SrcDirInput:
         file.name = file_path
         local_file_path = self.src_dir / file_path
         if local_file_path.exists():
-            sha256 = subprocess.check_output(['sha256sum', self.src_dir / file_path]).split()[0].decode('utf-8')
+            sha256 = hashlib.sha256(local_file_path.read_bytes()).hexdigest()
             hash = spdx.Hash()
             hash.algorithm = spdx.HashAlgorithm.sha256
             hash.hashValue = sha256
@@ -112,17 +111,25 @@ def main():
                     description='Build SPDX file from source directory and analyzer results')
     parser.add_argument('--src', type=Path, required=True)
     parser.add_argument('--src_strip_prefix', action='append')
+    parser.add_argument('--src_file_list', type=Path)
     parser.add_argument('--artifact', type=str)
     parser.add_argument('-v', '--verbose', action='store_true')
     parser.add_argument('out_dir', type=Path)
 
     args = parser.parse_args()
 
-    src_dir = args.src
 
     spdx_builder = SPDXBuilder(args.verbose)
 
-    src_dir_input = SrcDirInput(spdx_builder, src_dir, args.src_strip_prefix)
+    src_dir_input = SrcDirInput(spdx_builder, args.src, args.src_strip_prefix)
+
+    artifact_inputs = []
+    if args.src_file_list:
+        with args.src_file_list.open() as f:
+            for line in f:
+                src_file = src_dir_input.mk_and_add_spdx_file(line.strip())
+                artifact_inputs.append(src_file.spdxId)
+
     src_dir_input.mk_and_add_spdx_file("src/hello.c")
     src_dir_input.mk_and_add_spdx_file("src/hello.o")
 
