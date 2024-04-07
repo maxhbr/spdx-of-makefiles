@@ -162,11 +162,6 @@ def main():
 
                 artifact_inputs.append(output.spdxId)
 
-
-
-    src_dir_input.mk_and_add_spdx_file("src/hello.c")
-    src_dir_input.mk_and_add_spdx_file("src/hello.o")
-
     if args.artifact:
         artifact_file = src_dir_input.mk_and_add_spdx_file(args.artifact)
         package = spdx.software_Package()
