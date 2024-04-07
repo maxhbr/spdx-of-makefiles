@@ -87,7 +87,9 @@ class SrcDirInput:
     def sanitize_path(self, path):
         for prefix in self.prefixes_to_strip:
             if path.startswith(prefix):
-                return f".{path[len(prefix):]}"
+                return self.sanitize_path(path[len(prefix):])
+        if path.startswith('/'):
+            return self.sanitize_path(path[1:])
         return path
 
     def mk_and_add_spdx_file(self, raw_file_path):
@@ -105,6 +107,20 @@ class SrcDirInput:
             logging.warning(f'WARNING: File not found: {local_file_path}')
         return self.spdx_builder.add_object(file, 'FILE-' + file_path.replace('/', '-'))
 
+class SrcListInput:
+    def __init__(self, spdx_builder, src_list_file):
+        self.spdx_builder = spdx_builder
+        self.src_list_file = src_list_file
+
+    def run():
+        src_files = []
+        if args.src_file_list:
+            with args.src_file_list.open() as f:
+                for line in f:
+                    src_file = src_dir_input.mk_and_add_spdx_file(line.strip())
+                    src_files.append(src_file.spdxId)
+        return src_files
+
 def main():
     parser = argparse.ArgumentParser(
                     prog='SPDXBuilder',
@@ -112,6 +128,7 @@ def main():
     parser.add_argument('--src', type=Path, required=True)
     parser.add_argument('--src_strip_prefix', action='append')
     parser.add_argument('--src_file_list', type=Path)
+    parser.add_argument('--bear_json', type=Path)
     parser.add_argument('--artifact', type=str)
     parser.add_argument('-v', '--verbose', action='store_true')
     parser.add_argument('out_dir', type=Path)
@@ -125,10 +142,27 @@ def main():
 
     artifact_inputs = []
     if args.src_file_list:
-        with args.src_file_list.open() as f:
-            for line in f:
-                src_file = src_dir_input.mk_and_add_spdx_file(line.strip())
-                artifact_inputs.append(src_file.spdxId)
+        src_list_input = SrcListInput(spdx_builder, args.src_file_list)
+        artifact_inputs = src_list_input.run()
+
+    if args.bear_json:
+        with args.bear_json.open() as f:
+            bear_json = json.load(f)
+
+            for entry in bear_json:
+                directory = entry['directory'] # TODO: use for sanitizing paths
+                file = src_dir_input.mk_and_add_spdx_file(entry['file'])
+                output = src_dir_input.mk_and_add_spdx_file(entry['output'])
+
+                file_to_output_relationship = spdx.Relationship()
+                file_to_output_relationship.from_ = file
+                file_to_output_relationship.relationshipType = spdx.RelationshipType.generates
+                file_to_output_relationship.to = [output]
+                spdx_builder.add_object(file_to_output_relationship)
+
+                artifact_inputs.append(output.spdxId)
+
+
 
     src_dir_input.mk_and_add_spdx_file("src/hello.c")
     src_dir_input.mk_and_add_spdx_file("src/hello.o")
